@@ -1,0 +1,41 @@
+artifacts_dir: data
+
+data:
+  symbols:
+    - KRW-BTC
+    - KRW-ETH
+    - KRW-XRP
+    - KRW-SOL
+    - KRW-DOGE
+    - KRW-TRX
+    - KRW-ADA
+  interval_minutes: 240
+  window_size: 30
+  lookahead_candles: 6
+  image_size: 224
+  fetch_batch_size: 200
+  target_return: 0.05
+  fee_rate: 0.001
+  stride: 6
+
+training:
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  epochs: 50
+  device: cpu
+  threshold: 0.7
+
+backtest:
+  initial_capital: 1000000
+  position_size: 0.1
+  stop_loss: -0.03
+  take_profit: 0.05
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  reload: true
+
+storage:
+  database_path: data/candles.db

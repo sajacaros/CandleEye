@@ -1,0 +1,54 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+
+# Packaging / build artifacts
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Data artifacts
+data/candles.db
+data/processed/labels.csv
+data/raw/**
+!data/raw/.gitkeep
+data/images/**
+!data/images/.gitkeep
+data/processed/**
+!data/processed/.gitkeep
+
+# Model artifacts
+models/checkpoints/**
+!models/checkpoints/.gitkeep
+models/*.pth
+
+# Notebook cache
+notebooks/.ipynb_checkpoints/
