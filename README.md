@@ -38,6 +38,7 @@ CandlEye는 업비트 KRW 마켓 4시간봉 데이터를 수집해 차트 이미
    ```
    - `data/images/`에 하루 간격(stride=6)으로 캔들 차트 이미지를 렌더링하고,
    - 메타데이터와 라벨을 `data/processed/labels.csv`로 출력합니다.
+     - 주요 필드: `image_path`, `label`(목표 수익 달성 여부 1/0), `window_start`, `window_end`, `entry_price`, `target_price`.
 
 ## 추가 정보
 
@@ -48,6 +49,11 @@ CandlEye는 업비트 KRW 마켓 4시간봉 데이터를 수집해 차트 이미
 ## 샘플 자료
 
 - 예시 이미지: `data/samples/KRW_BTC_202505190000.png` (stride=6으로 생성한 30캔들 윈도우). 데이터 파이프라인 결과물이 어떤 형식인지 빠르게 확인할 수 있습니다.
+![](data/samples/KRW_BTC_20250519000.png)
+```
+KRW-BTC,data/images/KRW_BTC_202505190000.png,0,2025-05-14T04:00:00+00:00,2025-05-19T00:00:00+00:00,147363000.0,154878513.0
+```
+- 라벨 메타데이터 예시: `data/processed/labels.csv` 각 행이 이미지·라벨·타임윈도우·가격 정보를 포함합니다. (예: `python -c "import pandas as pd; print(pd.read_csv('data/processed/labels.csv').head())"`).
 - SQLite `candles` 테이블 스키마:
   ```sql
   CREATE TABLE IF NOT EXISTS candles (
