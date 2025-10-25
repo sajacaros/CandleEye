@@ -6,12 +6,18 @@ CandlEye는 업비트 KRW 마켓 4시간봉 데이터를 수집해 차트 이미
 
 ## 실행 준비
 
-1. **의존성 설치**
+1. **가상환경 생성 및 활성화 (선택)**
    ```bash
-   pip install ccxt requests python-dotenv pandas mplfinance
+   python3 -m venv .venv
+   source .venv/bin/activate   # Windows: .venv\Scripts\activate
    ```
 
-2. **환경 변수 설정**
+2. **의존성 설치**
+   ```bash
+   pip install ccxt requests python-dotenv pandas mplfinance pyyaml
+   ```
+
+3. **환경 변수 설정**
    - `.env.example`을 복사해 `.env`를 만들고, 업비트 API 키를 입력합니다.
    ```bash
    cp .env.example .env
