@@ -34,9 +34,11 @@ CandlEye는 업비트 KRW 마켓 4시간봉 데이터를 수집해 차트 이미
 
 2. **이미지 및 라벨 생성**
    ```bash
-   python src/image_generator.py --config configs/config.yaml
+   python src/image_generator.py --config configs/config.yaml [--clean-output]
    ```
-   - `data/images/`에 하루 간격(stride=6)으로 캔들 차트 이미지를 렌더링하고,
+   - `data/images/`에 하루 간격(stride=6)으로 캔들+거래량 차트 이미지를 렌더링합니다.
+     - 가격/거래량 숫자와 날짜 라벨만 숨기고 시각 패턴(캔들·거래량 막대)은 그대로 유지합니다.
+     - `--clean-output`을 추가하면 생성 전에 기존 PNG 파일을 전부 삭제해 깨끗한 데이터셋을 보장합니다.
    - 메타데이터와 라벨을 `data/processed/labels.csv`로 출력합니다.
      - 주요 필드: `image_path`, `label`(목표 수익 달성 여부 1/0), `window_start`, `window_end`, `entry_price`, `target_price`.
 

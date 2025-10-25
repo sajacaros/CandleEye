@@ -10,13 +10,13 @@ data:
     - KRW-TRX
     - KRW-ADA
   interval_minutes: 240
-  window_size: 30
+  window_size: 42
   lookahead_candles: 6
   image_size: 224
   fetch_batch_size: 200
   target_return: 0.05
   fee_rate: 0.001
-  stride: 6
+  stride: 3
 
 training:
   batch_size: 32

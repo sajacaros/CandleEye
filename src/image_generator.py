@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Iterable, List
 
+import matplotlib.pyplot as plt
 import mplfinance as mpf
 import pandas as pd
 
@@ -40,6 +41,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help="Path for the labels metadata CSV.",
     )
     parser.add_argument(
+        "--clean-output",
+        action="store_true",
+        help="Remove existing images in the output directory before generation.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -58,6 +64,15 @@ def setup_logging(level: str) -> None:
 def ensure_directories(image_dir: Path, metadata_path: Path) -> None:
     image_dir.mkdir(parents=True, exist_ok=True)
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def clear_output_dir(image_dir: Path) -> None:
+    removed = 0
+    for path in image_dir.glob("*.png"):
+        path.unlink(missing_ok=True)
+        removed += 1
+    if removed:
+        logger.info("Removed %s existing images from %s", removed, image_dir)
 
 
 def build_dataframe(records) -> pd.DataFrame:
@@ -84,16 +99,42 @@ def render_window(window: pd.DataFrame, output_path: Path, image_size: int) -> N
     style = mpf.make_mpf_style(marketcolors=market_colors, gridstyle=" ", facecolor="#111111")
     dpi = 100
     figsize = (image_size / dpi, image_size / dpi * 1.2)
-    mpf.plot(
+    fig, axes = mpf.plot(
         window,
         type="candle",
         volume=True,
         style=style,
-        savefig=dict(fname=str(output_path), dpi=dpi, bbox_inches="tight", pad_inches=0.02),
         tight_layout=True,
         figsize=figsize,
         scale_padding=dict(left=0, right=0, top=0.4, bottom=0.4),
+        returnfig=True,
     )
+    if isinstance(axes, dict):
+        axes_iterable = [ax for ax in axes.values() if ax is not None]
+    elif isinstance(axes, (list, tuple)):
+        axes_iterable = list(axes)
+    else:
+        axes_iterable = [axes]
+    for ax in axes_iterable:
+        ax.tick_params(
+            bottom=False,
+            left=False,
+            right=False,
+            top=False,
+            labelbottom=False,
+            labelleft=False,
+            labelright=False,
+            labeltop=False,
+        )
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if hasattr(ax, "yaxis"):
+            ax.yaxis.get_offset_text().set_visible(False)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
 
 
 def compute_label(
@@ -177,6 +218,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     image_dir = Path(args.output_dir)
     metadata_path = Path(args.metadata_path)
     ensure_directories(image_dir, metadata_path)
+    if args.clean_output:
+        clear_output_dir(image_dir)
 
     symbols = args.symbols or config.data.symbols
     all_metadata: List[dict] = []
