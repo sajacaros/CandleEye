@@ -44,3 +44,24 @@ CandlEye는 업비트 KRW 마켓 4시간봉 데이터를 수집해 차트 이미
 - `configs/config.yaml`을 수정하면 대상 심볼, 윈도우 크기, stride 등을 조정할 수 있습니다.
 - 실행 전에 `data/`, `models/checkpoints/`는 `.gitkeep`만 추적되며 산출물은 `.gitignore`로 제외됩니다.
 - 상세 기여 지침은 `AGENTS.md`를 참고해주세요.
+
+## 샘플 자료
+
+- 예시 이미지: `data/samples/KRW_BTC_202505190000.png` (stride=6으로 생성한 30캔들 윈도우). 데이터 파이프라인 결과물이 어떤 형식인지 빠르게 확인할 수 있습니다.
+- SQLite `candles` 테이블 스키마:
+  ```sql
+  CREATE TABLE IF NOT EXISTS candles (
+      market TEXT NOT NULL,
+      candle_time_utc TEXT NOT NULL,
+      candle_time_kst TEXT NOT NULL,
+      opening_price REAL NOT NULL,
+      high_price REAL NOT NULL,
+      low_price REAL NOT NULL,
+      trade_price REAL NOT NULL,
+      timestamp INTEGER NOT NULL,
+      candle_acc_trade_price REAL NOT NULL,
+      candle_acc_trade_volume REAL NOT NULL,
+      PRIMARY KEY (market, candle_time_utc)
+  );
+  ```
+  `sqlite3 data/candles.db "SELECT market, MIN(candle_time_utc), MAX(candle_time_utc) FROM candles GROUP BY market;"` 명령으로 수집 범위를 확인할 수 있습니다.
