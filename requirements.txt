@@ -1,0 +1,12 @@
+torch
+torchvision
+pandas
+numpy
+scikit-learn
+Pillow
+tqdm
+ccxt
+mplfinance
+python-dotenv
+pyyaml
+requests

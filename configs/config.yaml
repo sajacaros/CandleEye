@@ -9,8 +9,10 @@ data:
     - KRW-DOGE
     - KRW-TRX
     - KRW-ADA
+    - KRW-LINK
+    - KRW-DOT
   interval_minutes: 240
-  window_size: 42
+  window_size: 24
   lookahead_candles: 6
   image_size: 224
   fetch_batch_size: 200
@@ -21,10 +23,10 @@ data:
 training:
   batch_size: 32
   learning_rate: 0.0001
-  weight_decay: 0.00001
-  epochs: 50
-  device: cpu
-  threshold: 0.7
+  weight_decay: 0.000005
+  epochs: 80
+  device: cuda
+  threshold: 0.55
 
 backtest:
   initial_capital: 1000000

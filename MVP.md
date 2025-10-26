@@ -73,18 +73,14 @@ project/
 │   ├── raw/              # Upbit API 수집 데이터
 │   ├── images/           # 생성된 차트 이미지
 │   └── processed/        # 전처리 완료 데이터
+│   │   ├── labels.csv    # 이미지 라벨링 데이터
 ├── models/
 │   ├── checkpoints/      # 학습 체크포인트
 │   └── best_model.pth    # 최종 모델
 ├── src/
-│   ├── data_collector.py # 데이터 수집
-│   ├── image_generator.py# 차트 이미지 생성
 │   ├── dataset.py        # PyTorch Dataset
 │   ├── model.py          # ResNet18 모델
-│   ├── train.py          # 학습 스크립트
-│   ├── backtest.py       # 백테스트
-│   └── api.py            # FastAPI 서버
-├── notebooks/            # 실험용 노트북
+│   └── train.py          # 학습 스크립트
 └── configs/
     └── config.yaml       # 설정 파일
 ```
@@ -188,10 +184,9 @@ project/
 
 ### 데이터 분할
 
-- **Train**: 70% (가장 오래된 데이터)
-- **Validation**: 15% (중간 기간)
-- **Test**: 15% (가장 최근 데이터)
-- **주의**: 시계열 순서 유지, 랜덤 셔플 금지
+- **Train**: 70%
+- **Validation**: 15%
+- **Test**: 15%
 
 ### 손실 함수
 

@@ -4,72 +4,111 @@
 
 CandlEye는 업비트 KRW 마켓 4시간봉 데이터를 수집해 차트 이미지를 생성하고, 24시간 내 목표 수익률(5%+수수료) 달성 여부를 학습하는 FastAPI + PyTorch 기반 파이프라인입니다. ccxt로 캔들 데이터를 동기화하고 SQLite에 적재한 뒤, mplfinance로 캔들스틱 이미지를 만들고 레이블을 라벨링합니다. 이후 ResNet 등 CNN 모델로 학습해 신호 예측 및 API 서빙을 목표로 합니다.
 
-## 실행 준비
+---
 
-1. **가상환경 생성 및 활성화 (선택)**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate   # Windows: .venv\Scripts\activate
-   ```
+## 설치 및 실행 방법
 
-2. **의존성 설치**
-   ```bash
-   pip install ccxt requests python-dotenv pandas mplfinance pyyaml
-   ```
+### 1️⃣ 가상환경 생성 및 의존성 설치
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # (Windows: .venv\Scripts\activate)
 
-3. **환경 변수 설정**
-   - `.env.example`을 복사해 `.env`를 만들고, 업비트 API 키를 입력합니다.
-   ```bash
-   cp .env.example .env
-   # .env 편집하여 UPBIT_ACCESS_KEY, 필요 시 UPBIT_SECRET_KEY 설정
-   ```
-
-## 데이터 파이프라인 실행
-
-1. **캔들 데이터 수집**
-   ```bash
-   python src/data_collector.py --config configs/config.yaml
-   ```
-   - ccxt를 통해 기본 7개 마켓(KRW-BTC, ETH, XRP, SOL, DOGE, TRX, ADA)의 4시간봉을 SQLite `data/candles.db`에 저장합니다.
-
-2. **이미지 및 라벨 생성**
-   ```bash
-   python src/image_generator.py --config configs/config.yaml [--clean-output]
-   ```
-   - `data/images/`에 하루 간격(stride=6)으로 캔들+거래량 차트 이미지를 렌더링합니다.
-     - 가격/거래량 숫자와 날짜 라벨만 숨기고 시각 패턴(캔들·거래량 막대)은 그대로 유지합니다.
-     - `--clean-output`을 추가하면 생성 전에 기존 PNG 파일을 전부 삭제해 깨끗한 데이터셋을 보장합니다.
-   - 메타데이터와 라벨을 `data/processed/labels.csv`로 출력합니다.
-     - 주요 필드: `image_path`, `label`(목표 수익 달성 여부 1/0), `window_start`, `window_end`, `entry_price`, `target_price`.
-
-## 추가 정보
-
-- `configs/config.yaml`을 수정하면 대상 심볼, 윈도우 크기, stride 등을 조정할 수 있습니다.
-- 실행 전에 `data/`, `models/checkpoints/`는 `.gitkeep`만 추적되며 산출물은 `.gitignore`로 제외됩니다.
-- 상세 기여 지침은 `AGENTS.md`를 참고해주세요.
-
-## 샘플 자료
-
-- 예시 이미지: `data/samples/KRW_BTC_202505190000.png` (stride=6으로 생성한 30캔들 윈도우). 데이터 파이프라인 결과물이 어떤 형식인지 빠르게 확인할 수 있습니다.
-![](data/samples/KRW_BTC_20250519000.png)
+pip install -r requirements.txt
 ```
-KRW-BTC,data/images/KRW_BTC_202505190000.png,0,2025-05-14T04:00:00+00:00,2025-05-19T00:00:00+00:00,147363000.0,154878513.0
+
+> `requirements.txt` 내용 예시:
+```text
+torch
+torchvision
+pandas
+numpy
+scikit-learn
+Pillow
+tqdm
+ccxt
+mplfinance
+python-dotenv
+pyyaml
+requests
 ```
-- 라벨 메타데이터 예시: `data/processed/labels.csv` 각 행이 이미지·라벨·타임윈도우·가격 정보를 포함합니다. (예: `python -c "import pandas as pd; print(pd.read_csv('data/processed/labels.csv').head())"`).
-- SQLite `candles` 테이블 스키마:
-  ```sql
-  CREATE TABLE IF NOT EXISTS candles (
-      market TEXT NOT NULL,
-      candle_time_utc TEXT NOT NULL,
-      candle_time_kst TEXT NOT NULL,
-      opening_price REAL NOT NULL,
-      high_price REAL NOT NULL,
-      low_price REAL NOT NULL,
-      trade_price REAL NOT NULL,
-      timestamp INTEGER NOT NULL,
-      candle_acc_trade_price REAL NOT NULL,
-      candle_acc_trade_volume REAL NOT NULL,
-      PRIMARY KEY (market, candle_time_utc)
-  );
-  ```
-  `sqlite3 data/candles.db "SELECT market, MIN(candle_time_utc), MAX(candle_time_utc) FROM candles GROUP BY market;"` 명령으로 수집 범위를 확인할 수 있습니다.
+
+---
+
+### 2️⃣ 환경 변수 설정
+```bash
+cp .env.example .env
+# .env 편집 후 API 키 입력
+```
+
+---
+
+### 3️⃣ 데이터 파이프라인 실행
+#### (1) 캔들 데이터 수집
+```bash
+python src/data_collector.py --config configs/config.yaml
+```
+#### (2) 이미지 및 라벨 생성
+```bash
+python src/image_generator.py --config configs/config.yaml [--clean-output]
+```
+
+- 생성된 이미지: `data/images/`
+- 라벨 파일: `data/processed/labels.csv`
+
+---
+
+### 4️⃣ 모델 학습 및 평가
+#### (1) 모델 학습
+```bash
+python src/model_pipeline.py --mode train --data_csv data/processed/labels.csv --images_dir data/images --epochs 100 --batch_size 32 --pretrained
+```
+#### (2) 평가
+```bash
+python src/model_pipeline.py --mode eval --data_csv data/processed/labels.csv --images_dir data/images --checkpoint models/best_model.pth
+```
+#### (3) 단일 이미지 예측
+```bash
+python src/model_pipeline.py --mode predict --checkpoint models/best_model.pth --image data/images/KRW_BTC_202505190000.png
+```
+#### (4) focal loss
+```bash
+python src/model_pipeline.py --mode train --data_csv data/processed/labels.csv --images_dir data/images --epochs 80 --batch_size 64 --focal_alpha 0.7 --pretrained
+```
+
+
+---
+
+### 5️⃣ FastAPI 서빙 (선택)
+모델 학습이 완료되면 FastAPI를 통해 예측 API를 제공합니다.
+```bash
+uvicorn src.api_server:app --host 0.0.0.0 --port 8000 --reload
+```
+
+---
+
+## 디렉토리 구조
+```text
+CandlEye/
+├── configs/
+│   └── config.yaml
+├── data/
+│   ├── candles.db
+│   ├── images/
+│   └── processed/labels.csv
+├── models/
+│   └── best_model.pth
+├── src/
+│   ├── data_collector.py
+│   ├── image_generator.py
+│   ├── api_server.py
+│   └── model_pipeline.py
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## 참고
+- 학습 시 GPU가 있을 경우 자동으로 CUDA를 사용합니다.
+- 데이터 불균형(예: label=1 비율이 낮음)은 자동으로 `pos_weight`로 보정됩니다.
+- 테스트 결과는 AUC, Accuracy, Precision, Recall, Confusion Matrix를 포함합니다.
