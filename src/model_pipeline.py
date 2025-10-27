@@ -155,18 +155,45 @@ class ChartDataset(Dataset):
 def get_dataloaders(csv_path: str, images_dir: str, batch_size: int = 32,
                     val_ratio: float = 0.15, test_ratio: float = 0.15,
                     image_size: int = 224, seed: int = 42,
-                    use_weighted_sampler: bool = True) -> Tuple[DataLoader, DataLoader, DataLoader]:
+                    use_weighted_sampler: bool = True,
+                    time_based_split: bool = True) -> Tuple[DataLoader, DataLoader, DataLoader, pd.DataFrame]:
     df = pd.read_csv(csv_path)
-    df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
 
-    n = len(df)
-    n_test = int(n * test_ratio)
-    n_val = int(n * val_ratio)
-    n_train = n - n_val - n_test
+    if time_based_split:
+        # Time-based split to prevent data leakage
+        # Sort by window_end timestamp (chronological order)
+        if 'window_end' not in df.columns:
+            raise ValueError("CSV must contain 'window_end' column for time-based split")
 
-    df_train = df.iloc[:n_train].reset_index(drop=True)
-    df_val = df.iloc[n_train:n_train + n_val].reset_index(drop=True)
-    df_test = df.iloc[n_train + n_val:].reset_index(drop=True)
+        df['window_end_dt'] = pd.to_datetime(df['window_end'])
+        df = df.sort_values('window_end_dt').reset_index(drop=True)
+
+        # Split chronologically: oldest -> train, middle -> val, newest -> test
+        n = len(df)
+        n_test = int(n * test_ratio)
+        n_val = int(n * val_ratio)
+        n_train = n - n_val - n_test
+
+        df_train = df.iloc[:n_train].reset_index(drop=True)
+        df_val = df.iloc[n_train:n_train + n_val].reset_index(drop=True)
+        df_test = df.iloc[n_train + n_val:].reset_index(drop=True)
+
+        print(f"Time-based split:")
+        print(f"  Train: {df_train['window_end_dt'].min()} ~ {df_train['window_end_dt'].max()} ({len(df_train)} samples)")
+        print(f"  Val:   {df_val['window_end_dt'].min()} ~ {df_val['window_end_dt'].max()} ({len(df_val)} samples)")
+        print(f"  Test:  {df_test['window_end_dt'].min()} ~ {df_test['window_end_dt'].max()} ({len(df_test)} samples)")
+    else:
+        # Random split (original behavior)
+        df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+
+        n = len(df)
+        n_test = int(n * test_ratio)
+        n_val = int(n * val_ratio)
+        n_train = n - n_val - n_test
+
+        df_train = df.iloc[:n_train].reset_index(drop=True)
+        df_val = df.iloc[n_train:n_train + n_val].reset_index(drop=True)
+        df_test = df.iloc[n_train + n_val:].reset_index(drop=True)
 
     train_ds = ChartDataset(df_train, images_dir=images_dir, image_size=image_size, train=True)
     val_ds = ChartDataset(df_val, images_dir=images_dir, image_size=image_size, train=False)
@@ -191,7 +218,7 @@ def get_dataloaders(csv_path: str, images_dir: str, batch_size: int = 32,
     val_dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
 
-    return train_dl, val_dl, test_dl
+    return train_dl, val_dl, test_dl, df_test
 
 
 def build_model(pretrained: bool = True, dropout1: float = 0.5, dropout2: float = 0.3) -> nn.Module:
@@ -258,8 +285,60 @@ def evaluate_model(model, dataloader, device) -> dict:
         'recall': rec,
         'confusion_matrix': cm,
         'n_pos': int(trues.sum()),
-        'n_total': len(trues)
+        'n_total': len(trues),
+        'predictions': preds,
+        'ground_truth': trues
     }
+
+
+def evaluate_by_symbol(model, df_test: pd.DataFrame, images_dir: str, device, image_size: int = 224) -> dict:
+    """Evaluate model performance per symbol to detect model bias."""
+    if 'market' not in df_test.columns:
+        print("Warning: 'market' column not found in test dataframe. Skipping per-symbol evaluation.")
+        return {}
+
+    symbols = df_test['market'].unique()
+    results = {}
+
+    print("\n" + "="*80)
+    print("PER-SYMBOL PERFORMANCE ANALYSIS")
+    print("="*80)
+
+    for symbol in sorted(symbols):
+        df_symbol = df_test[df_test['market'] == symbol].reset_index(drop=True)
+
+        if len(df_symbol) == 0:
+            continue
+
+        # Create dataset and dataloader for this symbol
+        symbol_ds = ChartDataset(df_symbol, images_dir=images_dir, image_size=image_size, train=False)
+        symbol_dl = DataLoader(symbol_ds, batch_size=32, shuffle=False, num_workers=2, pin_memory=True)
+
+        # Evaluate
+        metrics = evaluate_model(model, symbol_dl, device)
+
+        results[symbol] = metrics
+
+        # Print summary
+        print(f"\n{symbol}:")
+        print(f"  Samples: {metrics['n_total']} (Positive: {metrics['n_pos']}, {metrics['n_pos']/metrics['n_total']*100:.1f}%)")
+        print(f"  AUC: {metrics['auc']:.4f}")
+        print(f"  Accuracy: {metrics['accuracy']:.4f}")
+        print(f"  Precision: {metrics['precision']:.4f}")
+        print(f"  Recall: {metrics['recall']:.4f}")
+        print(f"  Confusion Matrix:\n{metrics['confusion_matrix']}")
+
+    # Overall summary
+    print("\n" + "="*80)
+    print("SUMMARY")
+    print("="*80)
+    aucs = [r['auc'] for r in results.values() if not np.isnan(r['auc'])]
+    if aucs:
+        print(f"Mean AUC across symbols: {np.mean(aucs):.4f} (±{np.std(aucs):.4f})")
+        print(f"Best symbol: {max(results.keys(), key=lambda s: results[s]['auc'])} (AUC: {max(aucs):.4f})")
+        print(f"Worst symbol: {min(results.keys(), key=lambda s: results[s]['auc'])} (AUC: {min(aucs):.4f})")
+
+    return results
 
 
 def train(args):
@@ -268,14 +347,18 @@ def train(args):
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
         print(f"CUDA Version: {torch.version.cuda}")
-    train_dl, val_dl, test_dl = get_dataloaders(
+    # Determine split type (random-split flag overrides default)
+    use_time_split = not args.random_split
+
+    train_dl, val_dl, test_dl, df_test = get_dataloaders(
         args.data_csv,
         args.images_dir,
         batch_size=args.batch_size,
         val_ratio=args.val_ratio,
         test_ratio=args.test_ratio,
         image_size=args.image_size,
-        use_weighted_sampler=True  # 이 부분 추가!
+        use_weighted_sampler=True,
+        time_based_split=use_time_split
     )
 
     model = build_model(pretrained=args.pretrained)
@@ -352,26 +435,45 @@ def train(args):
     checkpoint = torch.load(os.path.join(args.checkpoint_dir, 'best_model.pth'), map_location=device)
     model.load_state_dict(checkpoint['model_state'])
     test_metrics = evaluate_model(model, test_dl, device)
+    print("\n" + "="*80)
+    print("OVERALL TEST METRICS")
+    print("="*80)
     print("Test metrics:", test_metrics)
+
+    # Per-symbol evaluation
+    evaluate_by_symbol(model, df_test, args.images_dir, device, args.image_size)
 
 
 def eval_mode(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    _, _, test_dl = get_dataloaders(
+
+    # Determine split type (random-split flag overrides default)
+    use_time_split = not args.random_split
+
+    _, _, test_dl, df_test = get_dataloaders(
         args.data_csv,
         args.images_dir,
         batch_size=args.batch_size,
         val_ratio=args.val_ratio,
         test_ratio=args.test_ratio,
         image_size=args.image_size,
-        use_weighted_sampler=False  # eval에서는 불필요
+        use_weighted_sampler=False,  # eval에서는 불필요
+        time_based_split=use_time_split
     )
     model = build_model(pretrained=False)
     ckpt = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(ckpt['model_state'])
     model = model.to(device)
+
+    # Overall evaluation
+    print("\n" + "="*80)
+    print("OVERALL TEST METRICS")
+    print("="*80)
     metrics = evaluate_model(model, test_dl, device)
     print(metrics)
+
+    # Per-symbol evaluation
+    evaluate_by_symbol(model, df_test, args.images_dir, device, args.image_size)
 
 
 def predict_single(args):
@@ -413,6 +515,8 @@ def parse_args():
     p.add_argument('--image', type=str, default=None)
     p.add_argument('--focal_alpha', type=float, default=None, help='Focal Loss alpha (auto-calculated if not provided)')
     p.add_argument('--focal_gamma', type=float, default=2.0, help='Focal Loss gamma (default: 2.0)')
+    p.add_argument('--time-based-split', action='store_true', default=True, help='Use time-based split instead of random (default: True)')
+    p.add_argument('--random-split', action='store_true', help='Use random split instead of time-based (overrides --time-based-split)')
     return p.parse_args()
 
 

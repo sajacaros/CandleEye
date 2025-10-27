@@ -58,19 +58,34 @@ python src/image_generator.py --config configs/config.yaml [--clean-output]
 ---
 
 ### 4️⃣ 모델 학습 및 평가
-#### (1) 모델 학습
+#### (1) 모델 학습 (시간 기반 분할 - 기본값)
 ```bash
 python src/model_pipeline.py --mode train --data_csv data/processed/labels.csv --images_dir data/images --epochs 100 --batch_size 32 --pretrained
 ```
-#### (2) 평가
+
+**새로운 기능**: 시간 기반 데이터 분할이 기본으로 활성화되어 데이터 누수를 방지합니다.
+- Train: 가장 오래된 데이터 (70%)
+- Validation: 중간 데이터 (15%)
+- Test: 가장 최근 데이터 (15%)
+
+랜덤 분할을 원하는 경우:
+```bash
+python src/model_pipeline.py --mode train --data_csv data/processed/labels.csv --images_dir data/images --epochs 100 --batch_size 32 --pretrained --random-split
+```
+
+#### (2) 평가 (심볼별 성능 분석 포함)
 ```bash
 python src/model_pipeline.py --mode eval --data_csv data/processed/labels.csv --images_dir data/images --checkpoint models/best_model.pth
 ```
+
+**새로운 기능**: 평가 시 자동으로 심볼별(KRW-BTC, KRW-ETH 등) 성능을 분석하여 모델 편향을 감지합니다.
+
 #### (3) 단일 이미지 예측
 ```bash
 python src/model_pipeline.py --mode predict --checkpoint models/best_model.pth --image data/images/KRW_BTC_202505190000.png
 ```
-#### (4) focal loss
+
+#### (4) Focal Loss 파라미터 조정
 ```bash
 python src/model_pipeline.py --mode train --data_csv data/processed/labels.csv --images_dir data/images --epochs 80 --batch_size 64 --focal_alpha 0.7 --pretrained
 ```
@@ -78,7 +93,39 @@ python src/model_pipeline.py --mode train --data_csv data/processed/labels.csv -
 
 ---
 
-### 5️⃣ FastAPI 서빙 (선택)
+### 5️⃣ 백테스팅 (신규 기능 ⭐)
+
+학습된 모델의 실전 성능을 검증하기 위한 백테스팅 모듈입니다.
+- 실제 거래 수수료 (0.1% × 2)
+- 슬리피지 모델링
+- Stop Loss / Take Profit 전략
+- Sharpe Ratio, Max Drawdown, Win Rate 계산
+
+```bash
+python src/backtester.py --model models/best_model.pth --data data/processed/labels.csv --config configs/config.yaml
+```
+
+**예측 임계값 조정**:
+```bash
+# 보수적 전략 (높은 확률만)
+python src/backtester.py --model models/best_model.pth --threshold 0.7
+
+# 공격적 전략 (더 많은 거래)
+python src/backtester.py --model models/best_model.pth --threshold 0.5
+```
+
+백테스트 설정은 `configs/config.yaml`에서 수정 가능:
+```yaml
+backtest:
+  initial_capital: 1000000  # 초기 자본
+  position_size: 0.1        # 포지션 크기 (10%)
+  stop_loss: -0.03          # 손절매 (-3%)
+  take_profit: 0.05         # 목표 수익률 (5%)
+```
+
+---
+
+### 6️⃣ FastAPI 서빙 (선택)
 모델 학습이 완료되면 FastAPI를 통해 예측 API를 제공합니다.
 ```bash
 uvicorn src.api_server:app --host 0.0.0.0 --port 8000 --reload
@@ -108,7 +155,27 @@ CandlEye/
 
 ---
 
+## 주요 개선사항 (v2.0)
+
+### 1. 시간 기반 데이터 분할 ⭐
+- **문제**: 기존 랜덤 분할은 미래 데이터가 학습에 유입되어 과적합 발생
+- **해결**: 시간 순으로 정렬 후 train(과거) → val(중간) → test(최근) 분할
+- **효과**: 실제 트레이딩 환경과 동일한 조건에서 모델 검증 가능
+
+### 2. 심볼별 성능 분석 ⭐
+- **문제**: 특정 코인에 편향된 모델인지 확인 불가
+- **해결**: 각 심볼(BTC, ETH, XRP 등)별 AUC, Accuracy, Precision, Recall 계산
+- **효과**: 모델이 특정 코인에 과적합되지 않았는지 검증 가능
+
+### 3. 백테스팅 모듈 ⭐
+- **문제**: 모델 성능 지표(AUC 등)가 실제 수익으로 이어지는지 불명확
+- **해결**: 실전과 동일한 조건(수수료, 슬리피지, 손절매)으로 거래 시뮬레이션
+- **효과**: Sharpe Ratio, Max Drawdown 등 실전 지표로 모델 평가 가능
+
+---
+
 ## 참고
 - 학습 시 GPU가 있을 경우 자동으로 CUDA를 사용합니다.
-- 데이터 불균형(예: label=1 비율이 낮음)은 자동으로 `pos_weight`로 보정됩니다.
+- 데이터 불균형(예: label=1 비율이 낮음)은 Focal Loss와 WeightedRandomSampler로 보정됩니다.
 - 테스트 결과는 AUC, Accuracy, Precision, Recall, Confusion Matrix를 포함합니다.
+- 시간 기반 분할이 기본값이며, `--random-split` 플래그로 기존 방식 사용 가능합니다.
