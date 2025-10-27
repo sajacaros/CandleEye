@@ -94,7 +94,7 @@ def build_dataframe(records) -> pd.DataFrame:
     return df
 
 
-def render_window(window: pd.DataFrame, output_path: Path, image_size: int) -> None:
+def render_window(window: pd.DataFrame, output_path: Path, image_size: int, mav: tuple[int, ...] | None = None) -> None:
     market_colors = mpf.make_marketcolors(up="red", down="blue", edge="inherit", wick="inherit")
     style = mpf.make_mpf_style(marketcolors=market_colors, gridstyle=" ", facecolor="#111111")
     dpi = 100
@@ -103,6 +103,7 @@ def render_window(window: pd.DataFrame, output_path: Path, image_size: int) -> N
         window,
         type="candle",
         volume=True,
+        mav=mav,  # 이동평균선 추가
         style=style,
         tight_layout=True,
         figsize=figsize,
@@ -160,29 +161,61 @@ def generate_samples(
     window_size = config.data.window_size
     lookahead = config.data.lookahead_candles
     stride = max(1, config.data.stride)
+
+    # 이동평균선 설정
+    moving_averages = config.data.moving_averages
+    max_ma = max(moving_averages) if moving_averages else 0
+    mav_tuple = tuple(moving_averages) if moving_averages else None
+
     metadata: List[dict] = []
-    total_windows = len(df) - (window_size + lookahead) + 1
+
+    # MA가 유효한 구간부터 시작
+    start_offset = max_ma
+    total_windows = len(df) - start_offset - (window_size + lookahead) + 1
     if total_windows <= 0:
-        logger.warning("Not enough data points to create a window for %s", market)
+        logger.warning("Not enough data points to create a window for %s (need at least %s candles for MA)",
+                      market, start_offset + window_size + lookahead)
         return metadata
 
-    logger.info(
-        "Processing %s windows for %s (window=%s, lookahead=%s, stride=%s)",
-        max(0, (total_windows + stride - 1) // stride),
-        market,
-        window_size,
-        lookahead,
-        stride,
-    )
+    if moving_averages:
+        logger.info(
+            "Processing %s windows for %s (window=%s, lookahead=%s, stride=%s, MA=%s)",
+            max(0, (total_windows + stride - 1) // stride),
+            market,
+            window_size,
+            lookahead,
+            stride,
+            moving_averages,
+        )
+    else:
+        logger.info(
+            "Processing %s windows for %s (window=%s, lookahead=%s, stride=%s)",
+            max(0, (total_windows + stride - 1) // stride),
+            market,
+            window_size,
+            lookahead,
+            stride,
+        )
 
-    for start_idx in range(0, len(df) - window_size - lookahead + 1, stride):
+    for start_idx in range(start_offset, len(df) - window_size - lookahead + 1, stride):
         end_idx = start_idx + window_size
+
+        # MA 계산을 위한 확장 window (MA 기간만큼 이전 데이터 포함)
+        ma_start_idx = start_idx - max_ma if max_ma > 0 else start_idx
+        window_with_ma = df.iloc[ma_start_idx:end_idx]
+
+        # 메타데이터 및 라벨링용 window (실제 24개)
         window = df.iloc[start_idx:end_idx]
         future = df.iloc[end_idx : end_idx + lookahead]
+
         if window.empty or future.empty:
             continue
+
         output_path = image_dir / f"{market.replace('-', '_')}_{window.index[-1].strftime('%Y%m%d%H%M')}.png"
-        render_window(window, output_path, config.data.image_size)
+
+        # 차트 생성: 확장된 window로 MA 계산 (차트에는 더 많은 캔들 표시됨)
+        render_window(window_with_ma, output_path, config.data.image_size, mav=mav_tuple)
+
         label = compute_label(
             window=window,
             future=future,

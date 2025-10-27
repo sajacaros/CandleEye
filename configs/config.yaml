@@ -19,6 +19,7 @@ data:
   target_return: 0.05
   fee_rate: 0.001
   stride: 3
+  moving_averages: [5, 10, 20]  # 이동평균선 기간 (차트에 표시)
 
 training:
   batch_size: 32
