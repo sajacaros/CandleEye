@@ -12,6 +12,7 @@ import mplfinance as mpf
 import pandas as pd
 
 from config import AppConfig, load_config
+from labeling_strategies import compute_risk_based_label
 from storage import SQLiteCandlesRepository
 
 
@@ -138,18 +139,6 @@ def render_window(window: pd.DataFrame, output_path: Path, image_size: int, mav:
     plt.close(fig)
 
 
-def compute_label(
-    window: pd.DataFrame,
-    future: pd.DataFrame,
-    target_return: float,
-    fee_rate: float,
-) -> int:
-    # 마지막 봉의 평균가 (Typical Price)
-    last_candle = window.iloc[-1]
-    entry = (last_candle["High"] + last_candle["Low"] + last_candle["Close"]) / 3
-    target = entry * (1 + target_return + fee_rate)
-    future_high = future["High"].max()
-    return int(future_high >= target)
 
 
 def generate_samples(
@@ -216,7 +205,8 @@ def generate_samples(
         # 차트 생성: 확장된 window로 MA 계산 (차트에는 더 많은 캔들 표시됨)
         render_window(window_with_ma, output_path, config.data.image_size, mav=mav_tuple)
 
-        label = compute_label(
+        # 리스크 기반 라벨 계산 (손절/익절 고려)
+        label = compute_risk_based_label(
             window=window,
             future=future,
             target_return=config.data.target_return,

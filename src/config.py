@@ -18,7 +18,7 @@ class DataSettings:
     target_return: float
     fee_rate: float
     stride: int
-    moving_averages: list[int] | None = None  # 이동평균선 기간 리스트
+    moving_averages: list[int] | None = None
 
 
 @dataclass

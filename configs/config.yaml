@@ -2,24 +2,18 @@ artifacts_dir: data
 
 data:
   symbols:
-    - KRW-BTC
-    - KRW-ETH
-    - KRW-XRP
-    - KRW-SOL
-    - KRW-DOGE
-    - KRW-TRX
-    - KRW-ADA
-    - KRW-LINK
-    - KRW-DOT
-  interval_minutes: 240
-  window_size: 42
-  lookahead_candles: 18
+    - KRW-BTC  # Bitcoin - market leader
+    - KRW-ETH  # Ethereum - altcoin representative
+    - KRW-SOL  # Solana - high-performance L1
+  interval_minutes: 60          # 1시간 봉
+  window_size: 168              # 7일 (168시간)
+  lookahead_candles: 48         # 2일 후 (48시간)
   image_size: 224
   fetch_batch_size: 200
-  target_return: 0.05
+  target_return: 0.04           # 4% 목표
   fee_rate: 0.001
-  stride: 3
-  moving_averages: [5, 10, 20]  # 이동평균선 기간 (차트에 표시)
+  stride: 12                    # 12시간 간격 샘플링
+  moving_averages: [12, 24, 72] # 12h, 1일, 3일 이평선
 
 training:
   batch_size: 32
@@ -33,7 +27,7 @@ backtest:
   initial_capital: 1000000
   position_size: 0.1
   stop_loss: -0.03
-  take_profit: 0.05
+  take_profit: 0.04             # target_return과 일치
 
 api:
   host: 0.0.0.0
