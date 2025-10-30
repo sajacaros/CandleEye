@@ -40,6 +40,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help="Maximum number of API batches to request per symbol.",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore existing data and collect from scratch (useful when changing interval_minutes).",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -99,10 +104,15 @@ def synchronize_market(
     interval_minutes: int,
     fetch_batch_size: int,
     max_batches: int,
+    force: bool = False,
 ) -> int:
     """Fetch up to max_batches of candles for a single market."""
-    newest_stored = repository.latest_timestamp(market)
-    logger.info("Syncing %s (latest stored: %s)", market, newest_stored or "none")
+    if force:
+        newest_stored = None
+        logger.info("Syncing %s (force mode: ignoring existing data)", market)
+    else:
+        newest_stored = repository.latest_timestamp(market)
+        logger.info("Syncing %s (latest stored: %s)", market, newest_stored or "none")
     total_new = 0
     cursor_to: datetime | None = None
     batches = 0
@@ -188,6 +198,7 @@ def main(argv: List[str] | None = None) -> int:
             interval_minutes=config.data.interval_minutes,
             fetch_batch_size=config.data.fetch_batch_size,
             max_batches=args.max_batches,
+            force=args.force,
         )
         total_inserted += inserted
 
