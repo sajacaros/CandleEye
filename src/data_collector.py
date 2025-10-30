@@ -163,7 +163,9 @@ def synchronize_market(
 
         time.sleep(0.15)  # simple rate limiting
 
-        if inserted < fetch_batch_size:
+        # Only check for early termination in incremental update mode
+        # Skip this check when: 1) force mode, or 2) collecting from scratch (newest_stored is None)
+        if not force and newest_stored is not None and inserted < fetch_batch_size:
             logger.debug("Batch smaller than fetch size for %s, likely caught up.", market)
             break
 
