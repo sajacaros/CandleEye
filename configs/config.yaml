@@ -12,8 +12,8 @@ data:
     - KRW-LINK
     - KRW-DOT
   interval_minutes: 240
-  window_size: 24
-  lookahead_candles: 6
+  window_size: 42
+  lookahead_candles: 18
   image_size: 224
   fetch_batch_size: 200
   target_return: 0.05
