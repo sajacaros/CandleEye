@@ -155,7 +155,7 @@ class ChartDataset(Dataset):
 def get_dataloaders(csv_path: str, images_dir: str, batch_size: int = 32,
                     val_ratio: float = 0.15, test_ratio: float = 0.15,
                     image_size: int = 224, seed: int = 42,
-                    use_weighted_sampler: bool = True,
+                    use_weighted_sampler: bool = False,
                     time_based_split: bool = True) -> Tuple[DataLoader, DataLoader, DataLoader, pd.DataFrame]:
     df = pd.read_csv(csv_path)
 
@@ -254,7 +254,7 @@ def compute_loss_and_outputs(model, batch, device, criterion):
     return loss, outputs.detach().cpu().numpy(), labels.detach().cpu().numpy()
 
 
-def evaluate_model(model, dataloader, device) -> dict:
+def evaluate_model(model, dataloader, device, threshold: float = 0.5) -> dict:
     model.eval()
     preds = []
     trues = []
@@ -272,7 +272,7 @@ def evaluate_model(model, dataloader, device) -> dict:
         auc = roc_auc_score(trues, preds)
     except Exception:
         auc = float('nan')
-    preds_bin = (preds >= 0.5).astype(int)
+    preds_bin = (preds >= threshold).astype(int)
     acc = accuracy_score(trues, preds_bin)
     prec = precision_score(trues, preds_bin, zero_division=0)
     rec = recall_score(trues, preds_bin, zero_division=0)
@@ -291,7 +291,7 @@ def evaluate_model(model, dataloader, device) -> dict:
     }
 
 
-def evaluate_by_symbol(model, df_test: pd.DataFrame, images_dir: str, device, image_size: int = 224) -> dict:
+def evaluate_by_symbol(model, df_test: pd.DataFrame, images_dir: str, device, threshold: float = 0.5, image_size: int = 224) -> dict:
     """Evaluate model performance per symbol to detect model bias."""
     if 'market' not in df_test.columns:
         print("Warning: 'market' column not found in test dataframe. Skipping per-symbol evaluation.")
@@ -315,7 +315,7 @@ def evaluate_by_symbol(model, df_test: pd.DataFrame, images_dir: str, device, im
         symbol_dl = DataLoader(symbol_ds, batch_size=32, shuffle=False, num_workers=2, pin_memory=True)
 
         # Evaluate
-        metrics = evaluate_model(model, symbol_dl, device)
+        metrics = evaluate_model(model, symbol_dl, device, threshold)
 
         results[symbol] = metrics
 
@@ -357,7 +357,7 @@ def train(args):
         val_ratio=args.val_ratio,
         test_ratio=args.test_ratio,
         image_size=args.image_size,
-        use_weighted_sampler=True,
+        use_weighted_sampler=False,  # FocalLoss 사용으로 인한 중복 방지
         time_based_split=use_time_split
     )
 
@@ -410,7 +410,7 @@ def train(args):
         scheduler.step()
         avg_loss = running_loss / max(1, n_batches)
 
-        val_metrics = evaluate_model(model, val_dl, device)
+        val_metrics = evaluate_model(model, val_dl, device, args.threshold)
         val_auc = val_metrics['auc'] if not np.isnan(val_metrics['auc']) else 0.0
 
         print(
@@ -434,14 +434,14 @@ def train(args):
     # final test evaluation
     checkpoint = torch.load(os.path.join(args.checkpoint_dir, 'best_model.pth'), map_location=device)
     model.load_state_dict(checkpoint['model_state'])
-    test_metrics = evaluate_model(model, test_dl, device)
+    test_metrics = evaluate_model(model, test_dl, device, args.threshold)
     print("\n" + "="*80)
     print("OVERALL TEST METRICS")
     print("="*80)
     print("Test metrics:", test_metrics)
 
     # Per-symbol evaluation
-    evaluate_by_symbol(model, df_test, args.images_dir, device, args.image_size)
+    evaluate_by_symbol(model, df_test, args.images_dir, device, args.threshold, args.image_size)
 
 
 def eval_mode(args):
@@ -469,11 +469,11 @@ def eval_mode(args):
     print("\n" + "="*80)
     print("OVERALL TEST METRICS")
     print("="*80)
-    metrics = evaluate_model(model, test_dl, device)
+    metrics = evaluate_model(model, test_dl, device, args.threshold)
     print(metrics)
 
     # Per-symbol evaluation
-    evaluate_by_symbol(model, df_test, args.images_dir, device, args.image_size)
+    evaluate_by_symbol(model, df_test, args.images_dir, device, args.threshold, args.image_size)
 
 
 def predict_single(args):
@@ -515,6 +515,7 @@ def parse_args():
     p.add_argument('--image', type=str, default=None)
     p.add_argument('--focal_alpha', type=float, default=None, help='Focal Loss alpha (auto-calculated if not provided)')
     p.add_argument('--focal_gamma', type=float, default=2.0, help='Focal Loss gamma (default: 2.0)')
+    p.add_argument('--threshold', type=float, default=0.5, help='Classification threshold for binary predictions (default: 0.5)')
     p.add_argument('--time-based-split', action='store_true', default=True, help='Use time-based split instead of random (default: True)')
     p.add_argument('--random-split', action='store_true', help='Use random split instead of time-based (overrides --time-based-split)')
     return p.parse_args()
