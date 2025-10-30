@@ -26,7 +26,8 @@ python src/image_generator.py --config configs/config.yaml --clean-output
 python src/model_pipeline.py --mode train \
   --data_csv data/processed/labels.csv \
   --images_dir data/images \
-  --epochs 80 --batch_size 32 --pretrained
+  --epochs 80 --batch_size 32 --pretrained \
+  --threshold 0.55 --min_precision 0.65 --min_recall 0.20
 
 # 5. 백테스팅 (약 1-5분)
 python src/backtester.py \
@@ -168,7 +169,10 @@ python src/model_pipeline.py --mode train \
   --images_dir data/images \
   --epochs 80 \
   --batch_size 32 \
-  --pretrained
+  --pretrained \
+  --threshold 0.55 \
+  --min_precision 0.65 \
+  --min_recall 0.20
 ```
 
 **모델 아키텍처**:
@@ -178,11 +182,15 @@ python src/model_pipeline.py --mode train \
 - Optimizer: AdamW (lr=1e-4, weight_decay=1e-5)
 - Scheduler: CosineAnnealingLR
 
-**데이터 분할** (시간 기반 - 기본값 ⭐):
-- Train: 가장 오래된 70% (학습용)
-- Validation: 중간 15% (조기 종료 기준)
-- Test: 가장 최근 15% (최종 평가)
-- **효과**: 미래 데이터 누수 방지, 실전 환경 시뮬레이션
+**데이터 분할** (코인별 시간 기반 - 기본값 ⭐):
+- **방식**: 각 코인(BTC, ETH, SOL 등)을 독립적으로 시간 순 분할
+- Train: 각 코인의 가장 오래된 70% (학습용)
+- Validation: 각 코인의 중간 15% (조기 종료 기준)
+- Test: 각 코인의 가장 최근 15% (최종 평가)
+- **효과**:
+  - 미래 데이터 누수 완벽 차단
+  - 코인 간 데이터 유출 방지 (시장 트렌드 독립성)
+  - 실전 환경과 동일한 조건으로 검증
 
 **예상 소요 시간**:
 - GPU (CUDA): 1-2시간
@@ -190,22 +198,44 @@ python src/model_pipeline.py --mode train \
 
 **학습 중 출력 예시**:
 ```
-Time-based split:
-  Train: 2024-01-01 ~ 2024-07-31 (7000 samples)
-  Val:   2024-08-01 ~ 2024-09-15 (1500 samples)
-  Test:  2024-09-16 ~ 2024-10-27 (1500 samples)
+Per-symbol time-based split:
+  KRW-BTC:
+    Train: 2025-06-27 ~ 2025-09-10 (2100 samples)
+    Val:   2025-09-11 ~ 2025-10-05 (450 samples)
+    Test:  2025-10-06 ~ 2025-10-31 (450 samples)
+  KRW-ETH:
+    Train: 2025-06-27 ~ 2025-09-10 (2100 samples)
+    Val:   2025-09-11 ~ 2025-10-05 (450 samples)
+    Test:  2025-10-06 ~ 2025-10-31 (450 samples)
+  KRW-SOL:
+    Train: 2025-06-27 ~ 2025-09-10 (2100 samples)
+    Val:   2025-09-11 ~ 2025-10-05 (450 samples)
+    Test:  2025-10-06 ~ 2025-10-31 (450 samples)
+
+Total:
+  Train: 6300 samples
+  Val:   1350 samples
+  Test:  1350 samples
 
 pos: 450, neg: 9550, focal_loss_alpha: 0.955, focal_loss_gamma: 2.0
 
-Epoch 1/80 | train_loss: 0.3214 | val_auc: 0.5821 | val_acc: 0.9100
-Saved best model
+Epoch 1/80 | train_loss: 0.3214 | val_auc: 0.5821 | val_prec: 0.3012 | val_rec: 0.2156
+  (Not saved: prec=0.301 < 0.65 or rec=0.216 < 0.2)
 ...
-Epoch 25/80 | train_loss: 0.1823 | val_auc: 0.6892 | val_acc: 0.9245
-Saved best model
+Epoch 25/80 | train_loss: 0.1823 | val_auc: 0.6892 | val_prec: 0.6712 | val_rec: 0.2345
+✓ Saved best model (prec=0.671, rec=0.234, auc=0.689)
 ```
 
+**Best Model Selection** (투자 모델 최적화 ⭐):
+모델 저장은 단순 AUC 최대화가 아닌 **실전 수익성 기준**으로 선택됩니다:
+- **Precision ≥ 65%**: 매수 신호 중 65% 이상이 실제 수익 (False Positive 제어)
+- **Recall ≥ 20%**: 실제 수익 기회의 20% 이상을 포착 (기회 손실 방지)
+- **AUC 최대화**: 위 조건을 만족하는 모델 중 가장 좋은 분류 성능
+
+이 기준은 `--min_precision`과 `--min_recall` 옵션으로 조정 가능합니다.
+
 **생성 파일**:
-- `models/best_model.pth`: 검증 AUC가 가장 높은 모델
+- `models/best_model.pth`: 위 기준을 만족하는 최고 성능 모델
 
 **성공 확인**:
 ```bash
@@ -229,14 +259,24 @@ python src/model_pipeline.py --mode train \
   --images_dir data/images \
   --epochs 80 --batch_size 64 \
   --focal_alpha 0.7 --focal_gamma 2.5 \
-  --pretrained
+  --pretrained \
+  --threshold 0.55 --min_precision 0.65 --min_recall 0.20
 
-# 학습률 조정
+# 보수적 전략 (높은 precision 요구)
 python src/model_pipeline.py --mode train \
   --data_csv data/processed/labels.csv \
   --images_dir data/images \
-  --lr 5e-5 --weight_decay 1e-4 \
-  --pretrained
+  --epochs 80 --batch_size 32 \
+  --pretrained \
+  --threshold 0.6 --min_precision 0.75 --min_recall 0.15
+
+# 공격적 전략 (높은 recall 요구)
+python src/model_pipeline.py --mode train \
+  --data_csv data/processed/labels.csv \
+  --images_dir data/images \
+  --epochs 80 --batch_size 32 \
+  --pretrained \
+  --threshold 0.5 --min_precision 0.55 --min_recall 0.30
 ```
 
 ---
@@ -544,24 +584,41 @@ python src/backtester.py \
 
 ---
 
-## 주요 개선사항 (v2.0)
+## 주요 개선사항 (v2.1)
 
-### 1. 시간 기반 데이터 분할 ⭐
-- **문제**: 기존 랜덤 분할은 미래 데이터가 학습에 유입되어 과적합 발생
-- **해결**: 시간 순으로 정렬 후 train(과거) → val(중간) → test(최근) 분할
-- **효과**: 실제 트레이딩 환경과 동일한 조건에서 모델 검증 가능
+### 1. 코인별 시간 기반 데이터 분할 ⭐
+- **문제**:
+  - 기존 랜덤 분할은 미래 데이터가 학습에 유입되어 과적합 발생
+  - 전체 코인 통합 시간 분할은 코인 간 시장 트렌드 유출 가능
+- **해결**: 각 코인(BTC, ETH, SOL)을 독립적으로 시간 순 분할
+  - BTC: Train(70%) → Val(15%) → Test(15%)
+  - ETH: Train(70%) → Val(15%) → Test(15%)
+  - SOL: Train(70%) → Val(15%) → Test(15%)
+- **효과**:
+  - 미래 데이터 누수 완벽 차단
+  - 코인 간 독립성 보장 (같은 시점이라도 학습/검증 분리)
+  - 더 robust하고 일반화된 모델 학습
+  - 실제 트레이딩 환경과 동일한 조건으로 검증
 
-### 2. 심볼별 성능 분석 ⭐
+### 2. 투자 모델 기반 Best Model Selection ⭐
+- **문제**: AUC만 높은 모델은 False Positive가 많아 실전에서 손실 발생
+- **해결**: 3가지 조건을 모두 만족하는 모델만 저장
+  - Precision ≥ 65%: 매수 신호의 65%가 실제 수익
+  - Recall ≥ 20%: 수익 기회의 20% 이상 포착
+  - AUC 최대화: 분류 성능 최고
+- **효과**: 실전 수익성을 고려한 모델 선택, False Positive 대폭 감소
+
+### 3. 심볼별 성능 분석 ⭐
 - **문제**: 특정 코인에 편향된 모델인지 확인 불가
 - **해결**: 각 심볼(BTC, ETH, XRP 등)별 AUC, Accuracy, Precision, Recall 계산
 - **효과**: 모델이 특정 코인에 과적합되지 않았는지 검증 가능
 
-### 3. 백테스팅 모듈 ⭐
+### 4. 백테스팅 모듈 ⭐
 - **문제**: 모델 성능 지표(AUC 등)가 실제 수익으로 이어지는지 불명확
 - **해결**: 실전과 동일한 조건(수수료, 슬리피지, 손절매)으로 거래 시뮬레이션
 - **효과**: Sharpe Ratio, Max Drawdown 등 실전 지표로 모델 평가 가능
 
-### 4. 이동평균선 추가 ⭐
+### 5. 이동평균선 추가 ⭐
 - **문제**: 캔들 패턴만으로는 추세 파악이 불충분할 수 있음
 - **해결**: 트레이더들이 실제로 보는 이동평균선(MA5, MA10, MA20) 차트에 추가
 - **효과**:

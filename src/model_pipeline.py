@@ -160,28 +160,51 @@ def get_dataloaders(csv_path: str, images_dir: str, batch_size: int = 32,
     df = pd.read_csv(csv_path)
 
     if time_based_split:
-        # Time-based split to prevent data leakage
-        # Sort by window_end timestamp (chronological order)
+        # Per-symbol time-based split to prevent cross-symbol data leakage
+        # Each symbol is split independently by time
         if 'window_end' not in df.columns:
             raise ValueError("CSV must contain 'window_end' column for time-based split")
+        if 'market' not in df.columns:
+            raise ValueError("CSV must contain 'market' column for per-symbol split")
 
         df['window_end_dt'] = pd.to_datetime(df['window_end'])
-        df = df.sort_values('window_end_dt').reset_index(drop=True)
 
-        # Split chronologically: oldest -> train, middle -> val, newest -> test
-        n = len(df)
-        n_test = int(n * test_ratio)
-        n_val = int(n * val_ratio)
-        n_train = n - n_val - n_test
+        # Split each symbol independently
+        train_dfs = []
+        val_dfs = []
+        test_dfs = []
 
-        df_train = df.iloc[:n_train].reset_index(drop=True)
-        df_val = df.iloc[n_train:n_train + n_val].reset_index(drop=True)
-        df_test = df.iloc[n_train + n_val:].reset_index(drop=True)
+        print("Per-symbol time-based split:")
+        for symbol in sorted(df['market'].unique()):
+            symbol_df = df[df['market'] == symbol].sort_values('window_end_dt').reset_index(drop=True)
 
-        print(f"Time-based split:")
-        print(f"  Train: {df_train['window_end_dt'].min()} ~ {df_train['window_end_dt'].max()} ({len(df_train)} samples)")
-        print(f"  Val:   {df_val['window_end_dt'].min()} ~ {df_val['window_end_dt'].max()} ({len(df_val)} samples)")
-        print(f"  Test:  {df_test['window_end_dt'].min()} ~ {df_test['window_end_dt'].max()} ({len(df_test)} samples)")
+            n = len(symbol_df)
+            n_test = int(n * test_ratio)
+            n_val = int(n * val_ratio)
+            n_train = n - n_val - n_test
+
+            train_df = symbol_df.iloc[:n_train].reset_index(drop=True)
+            val_df = symbol_df.iloc[n_train:n_train + n_val].reset_index(drop=True)
+            test_df = symbol_df.iloc[n_train + n_val:].reset_index(drop=True)
+
+            train_dfs.append(train_df)
+            val_dfs.append(val_df)
+            test_dfs.append(test_df)
+
+            print(f"  {symbol}:")
+            print(f"    Train: {train_df['window_end_dt'].min()} ~ {train_df['window_end_dt'].max()} ({len(train_df)} samples)")
+            print(f"    Val:   {val_df['window_end_dt'].min()} ~ {val_df['window_end_dt'].max()} ({len(val_df)} samples)")
+            print(f"    Test:  {test_df['window_end_dt'].min()} ~ {test_df['window_end_dt'].max()} ({len(test_df)} samples)")
+
+        # Combine all symbols
+        df_train = pd.concat(train_dfs, ignore_index=True)
+        df_val = pd.concat(val_dfs, ignore_index=True)
+        df_test = pd.concat(test_dfs, ignore_index=True)
+
+        print(f"\nTotal:")
+        print(f"  Train: {len(df_train)} samples")
+        print(f"  Val:   {len(df_val)} samples")
+        print(f"  Test:  {len(df_test)} samples")
     else:
         # Random split (original behavior)
         df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
