@@ -412,20 +412,30 @@ def train(args):
 
         val_metrics = evaluate_model(model, val_dl, device, args.threshold)
         val_auc = val_metrics['auc'] if not np.isnan(val_metrics['auc']) else 0.0
+        val_precision = val_metrics['precision']
+        val_recall = val_metrics['recall']
 
         print(
-            f"Epoch {epoch} | train_loss: {avg_loss:.4f} | val_auc: {val_auc:.4f} | val_acc: {val_metrics['accuracy']:.4f}")
+            f"Epoch {epoch} | train_loss: {avg_loss:.4f} | val_auc: {val_auc:.4f} | "
+            f"val_prec: {val_precision:.4f} | val_rec: {val_recall:.4f}")
 
-        # save best
-        if val_auc > best_auc:
+        # save best model with business-oriented criteria
+        # - Precision ≥ 65%: 매수 신호 중 65% 이상이 실제 수익
+        # - Recall ≥ 20%: 실제 수익 기회의 20% 이상을 포착
+        # - AUC 최대화: 위 조건을 만족하는 모델 중 가장 좋은 것
+        if (val_precision >= args.min_precision and
+            val_recall >= args.min_recall and
+            val_auc > best_auc):
             best_auc = val_auc
             epochs_no_improve = 0
             os.makedirs(args.checkpoint_dir, exist_ok=True)
             torch.save({'model_state': model.state_dict(), 'args': vars(args)},
                        os.path.join(args.checkpoint_dir, 'best_model.pth'))
-            print("Saved best model")
+            print(f"✓ Saved best model (prec={val_precision:.3f}, rec={val_recall:.3f}, auc={val_auc:.3f})")
         else:
             epochs_no_improve += 1
+            if val_precision < args.min_precision or val_recall < args.min_recall:
+                print(f"  (Not saved: prec={val_precision:.3f} < {args.min_precision} or rec={val_recall:.3f} < {args.min_recall})")
 
         if epochs_no_improve >= args.patience:
             print(f"Early stopping after {epoch} epochs")
@@ -516,6 +526,8 @@ def parse_args():
     p.add_argument('--focal_alpha', type=float, default=None, help='Focal Loss alpha (auto-calculated if not provided)')
     p.add_argument('--focal_gamma', type=float, default=2.0, help='Focal Loss gamma (default: 2.0)')
     p.add_argument('--threshold', type=float, default=0.5, help='Classification threshold for binary predictions (default: 0.5)')
+    p.add_argument('--min_precision', type=float, default=0.65, help='Minimum precision to save model (default: 0.65)')
+    p.add_argument('--min_recall', type=float, default=0.20, help='Minimum recall to save model (default: 0.20)')
     p.add_argument('--time-based-split', action='store_true', default=True, help='Use time-based split instead of random (default: True)')
     p.add_argument('--random-split', action='store_true', help='Use random split instead of time-based (overrides --time-based-split)')
     return p.parse_args()

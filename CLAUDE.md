@@ -49,14 +49,16 @@ python src/model_pipeline.py --mode train \
   --batch_size 32 \
   --pretrained
 
-# Train with Focal Loss for class imbalance
+# Train with Focal Loss and business-oriented model selection
 python src/model_pipeline.py --mode train \
   --data_csv data/processed/labels.csv \
   --images_dir data/images \
   --epochs 80 \
   --batch_size 64 \
-  --focal_alpha 0.7 \
-  --pretrained
+  --pretrained \
+  --threshold 0.55 \
+  --min_precision 0.65 \
+  --min_recall 0.20
 
 # Evaluate trained model
 python src/model_pipeline.py --mode eval \
@@ -113,8 +115,15 @@ Upbit API (ccxt) → SQLite (candles.db) → Image Generator (mplfinance)
 - `ChartDataset`: PyTorch Dataset with ImageNet normalization and data augmentation for training
 - `build_model()`: ResNet18 with custom classification head (512→256→128→1 with dropout)
 - `FocalLoss`: Handles class imbalance with alpha and gamma parameters
-- `train()`: Training loop with weighted sampling, early stopping, and checkpoint saving
+- `train()`: Training loop with business-oriented model selection, early stopping, and checkpoint saving
 - `evaluate_model()`: Computes AUC, accuracy, precision, recall, confusion matrix
+
+**Best Model Selection Criteria** (for trading applications):
+- **Precision ≥ 65%**: 매수 신호 중 65% 이상이 실제 수익 (False Positive 제어)
+- **Recall ≥ 20%**: 실제 수익 기회의 20% 이상을 포착 (기회 손실 방지)
+- **AUC 최대화**: 위 조건을 만족하는 모델 중 가장 좋은 분류 성능
+
+This approach balances precision (avoiding bad trades) with recall (capturing opportunities), which is critical for profitable trading strategies. Configurable via `--min_precision` and `--min_recall` arguments.
 
 ### Configuration Structure
 
