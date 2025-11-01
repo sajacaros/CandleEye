@@ -12,7 +12,7 @@ import mplfinance as mpf
 import pandas as pd
 
 from config import AppConfig, load_config
-from labeling_strategies import compute_risk_based_label
+from labeling_strategies import compute_risk_based_label, compute_4class_label
 from storage import SQLiteCandlesRepository
 
 
@@ -159,7 +159,9 @@ def generate_samples(
     metadata: List[dict] = []
 
     # MA가 유효한 구간부터 시작
-    start_offset = max_ma
+    # window_with_ma의 모든 봉에 MA가 표시되려면
+    # window 시작 이전에 max_ma 데이터가 추가로 필요
+    start_offset = max_ma * 2 if max_ma > 0 else 0
     total_windows = len(df) - start_offset - (window_size + lookahead) + 1
     if total_windows <= 0:
         logger.warning("Not enough data points to create a window for %s (need at least %s candles for MA)",
@@ -205,8 +207,8 @@ def generate_samples(
         # 차트 생성: 확장된 window로 MA 계산 (차트에는 더 많은 캔들 표시됨)
         render_window(window_with_ma, output_path, config.data.image_size, mav=mav_tuple)
 
-        # 리스크 기반 라벨 계산 (손절/익절 고려)
-        label = compute_risk_based_label(
+        # 4-class 라벨 계산 (손절/익절 고려, 수익률 구간별 분류)
+        label = compute_4class_label(
             window=window,
             future=future,
             target_return=config.data.target_return,

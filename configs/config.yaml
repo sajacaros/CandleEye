@@ -10,7 +10,7 @@ data:
   lookahead_candles: 48         # 2일 후 (48시간)
   image_size: 224
   fetch_batch_size: 200
-  target_return: 0.04           # 4% 목표
+  target_return: 0.05           # 5% 목표
   fee_rate: 0.001
   stride: 12                    # 12시간 간격 샘플링
   moving_averages: [12, 24, 72] # 12h, 1일, 3일 이평선
@@ -27,7 +27,7 @@ backtest:
   initial_capital: 1000000
   position_size: 0.1
   stop_loss: -0.03
-  take_profit: 0.04             # target_return과 일치
+  take_profit: 0.05             # target_return과 일치
 
 api:
   host: 0.0.0.0
