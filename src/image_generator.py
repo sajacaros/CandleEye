@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 from pathlib import Path
 from typing import Iterable, List
 
@@ -69,7 +70,8 @@ def ensure_directories(image_dir: Path, metadata_path: Path) -> None:
 
 def clear_output_dir(image_dir: Path) -> None:
     removed = 0
-    for path in image_dir.glob("*.png"):
+    # 하위 디렉토리의 PNG 파일도 재귀적으로 삭제
+    for path in image_dir.glob("**/*.png"):
         path.unlink(missing_ok=True)
         removed += 1
     if removed:
@@ -130,6 +132,8 @@ def render_window(window: pd.DataFrame, output_path: Path, image_size: int, mav:
         )
         ax.set_xticks([])
         ax.set_yticks([])
+        ax.set_xlabel('')  # x축 레이블 제거
+        ax.set_ylabel('')  # y축 레이블 제거 (Price, Volume 텍스트)
         if hasattr(ax, "yaxis"):
             ax.yaxis.get_offset_text().set_visible(False)
         for spine in ax.spines.values():
@@ -155,6 +159,10 @@ def generate_samples(
     moving_averages = config.data.moving_averages
     max_ma = max(moving_averages) if moving_averages else 0
     mav_tuple = tuple(moving_averages) if moving_averages else None
+
+    # 심볼별 하위 디렉토리 생성
+    market_dir = image_dir / market.replace('-', '_')
+    market_dir.mkdir(parents=True, exist_ok=True)
 
     metadata: List[dict] = []
 
@@ -202,7 +210,12 @@ def generate_samples(
         if window.empty or future.empty:
             continue
 
-        output_path = image_dir / f"{market.replace('-', '_')}_{window.index[-1].strftime('%Y%m%d%H%M')}.png"
+        # 연도별 하위 디렉토리에 저장
+        year = window.index[-1].year
+        year_dir = market_dir / str(year)
+        year_dir.mkdir(parents=True, exist_ok=True)
+
+        output_path = year_dir / f"{market.replace('-', '_')}_{window.index[-1].strftime('%Y%m%d%H%M')}.png"
 
         # 차트 생성: 확장된 window로 MA 계산 (차트에는 더 많은 캔들 표시됨)
         render_window(window_with_ma, output_path, config.data.image_size, mav=mav_tuple)
@@ -245,11 +258,20 @@ def main(argv: Iterable[str] | None = None) -> int:
     image_dir = Path(args.output_dir)
     metadata_path = Path(args.metadata_path)
     ensure_directories(image_dir, metadata_path)
+
     if args.clean_output:
         clear_output_dir(image_dir)
+        # CSV 파일도 초기화
+        if metadata_path.exists():
+            metadata_path.unlink()
+            logger.info("Removed existing metadata file: %s", metadata_path)
 
     symbols = args.symbols or config.data.symbols
-    all_metadata: List[dict] = []
+    total_samples = 0
+    first_symbol = True
+    first_image_copied = False
+    sample_dir = Path("data/samples")
+
     for market in symbols:
         records = repository.fetch_candles(market)
         if not records:
@@ -257,16 +279,37 @@ def main(argv: Iterable[str] | None = None) -> int:
             continue
         df = build_dataframe(records)
         samples = generate_samples(df, market, config, image_dir)
-        all_metadata.extend(samples)
-        logger.info("Generated %s samples for %s", len(samples), market)
 
-    if not all_metadata:
+        if samples:
+            # 처음 만든 1장의 이미지를 data/samples에 복사
+            if not first_image_copied:
+                sample_dir.mkdir(parents=True, exist_ok=True)
+                first_image_path = Path(samples[0]["image_path"])
+                sample_image_path = sample_dir / first_image_path.name
+                shutil.copy(first_image_path, sample_image_path)
+                logger.info("Copied first sample image to %s", sample_image_path)
+                first_image_copied = True
+
+            # 각 심볼 완료 후 바로 CSV에 저장
+            samples_df = pd.DataFrame(samples)
+            if first_symbol:
+                # 첫 번째 심볼: 새로 생성 (header 포함)
+                samples_df.to_csv(metadata_path, index=False, mode='w')
+                first_symbol = False
+            else:
+                # 이후 심볼: append 모드 (header 없이)
+                samples_df.to_csv(metadata_path, index=False, mode='a', header=False)
+
+            total_samples += len(samples)
+            logger.info("Generated %s samples for %s | Total: %s samples",
+                       len(samples), market, total_samples)
+            logger.info("Updated metadata file: %s", metadata_path)
+
+    if total_samples == 0:
         logger.warning("No samples generated.")
         return 0
 
-    metadata_df = pd.DataFrame(all_metadata)
-    metadata_df.to_csv(metadata_path, index=False)
-    logger.info("Saved metadata to %s", metadata_path)
+    logger.info("All done! Total %s samples saved to %s", total_samples, metadata_path)
     return 0
 
 

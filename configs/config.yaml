@@ -12,7 +12,7 @@ data:
   fetch_batch_size: 200
   target_return: 0.05           # 5% 목표
   fee_rate: 0.001
-  stride: 12                    # 12시간 간격 샘플링
+  stride: 6                    # 6시간 간격 샘플링
   moving_averages: [12, 24, 72] # 12h, 1일, 3일 이평선
 
 training:
